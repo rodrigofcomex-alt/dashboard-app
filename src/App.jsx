@@ -3,23 +3,15 @@ import { initialClients, initialInvoices, initialProducts } from './data';
 import { format, isPast, isToday, addDays, addMonths, parseISO, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
-  LayoutDashboard, 
-  Users, 
-  Receipt, 
-  TrendingUp, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock,
-  Plus,
-  Package,
-  MessageCircle,
-  Trash2,
-  Edit2,
-  Minus,
-  ChevronLeft,
-  Eye
+  LayoutDashboard, Users, Receipt, TrendingUp, AlertCircle, 
+  CheckCircle2, Clock, Plus, Package, MessageCircle, 
+  Trash2, Edit2, Minus, ChevronLeft, Eye, LogOut
 } from 'lucide-react';
 import './App.css';
+
+// Firebase Integrations
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { db } from './firebaseConfig';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
@@ -50,9 +42,8 @@ const generateInvoicesForClient = (client, productTotalCost) => {
   let invoiceCount = 0;
   while (isBefore(currentDate, cutoff) && invoiceCount < 50) {
     newInvoices.push({
-      id: Math.random().toString(36).substr(2, 9),
-      clientId: client.id,
-      dueDate: new Date(currentDate),
+      clientId: String(client.id),
+      dueDate: new Date(currentDate).toISOString(),
       value: Number(client.value),
       cost: costPerInvoice,
       status: 'Aguardando',
@@ -71,18 +62,19 @@ const generateInvoicesForClient = (client, productTotalCost) => {
 
 // --- Shared Components ---
 
-const InvoicesTableComponent = ({ invoices, setInvoices, clients }) => {
+const InvoicesTableComponent = ({ invoices, clients }) => {
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
 
-  const handleMarkAsPaid = (id) => {
-    setInvoices(prev => prev.map(inv => 
-      String(inv.id) === String(id) ? { ...inv, status: 'Pago', paidDate: new Date() } : inv
-    ));
+  const handleMarkAsPaid = async (id) => {
+    await updateDoc(doc(db, 'invoices', String(id)), { 
+      status: 'Pago', 
+      paidDate: new Date().toISOString() 
+    });
   };
 
-  const handleDelete = (id) => {
-    setInvoices(prev => prev.filter(inv => String(inv.id) !== String(id)));
+  const handleDelete = async (id) => {
+    await deleteDoc(doc(db, 'invoices', String(id)));
   };
 
   const startEditing = (inv) => {
@@ -90,10 +82,12 @@ const InvoicesTableComponent = ({ invoices, setInvoices, clients }) => {
     setEditData({ value: inv.value, cost: inv.cost, dueDate: format(new Date(inv.dueDate), 'yyyy-MM-dd') });
   };
 
-  const saveEdit = (id) => {
-    setInvoices(prev => prev.map(inv => 
-      String(inv.id) === String(id) ? { ...inv, value: Number(editData.value), cost: Number(editData.cost), dueDate: parseISO(editData.dueDate) } : inv
-    ));
+  const saveEdit = async (id) => {
+    await updateDoc(doc(db, 'invoices', String(id)), {
+      value: Number(editData.value), 
+      cost: Number(editData.cost), 
+      dueDate: new Date(editData.dueDate).toISOString()
+    });
     setEditingId(null);
   };
 
@@ -186,7 +180,7 @@ const InvoicesTableComponent = ({ invoices, setInvoices, clients }) => {
 
 // --- Layouts ---
 
-const Sidebar = ({ activeTab, setActiveTab }) => {
+const Sidebar = ({ activeTab, setActiveTab, onLogout }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'invoices', label: 'Lançamentos', icon: Receipt },
@@ -195,28 +189,35 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   ];
 
   return (
-    <aside className="sidebar">
-      <div style={{ marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '20px'}}>E</div>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.5px' }}>Emphasis</h2>
-      </div>
+    <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div>
+        <div style={{ marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '20px'}}>E</div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.5px' }}>Emphasis</h2>
+        </div>
 
-      <ul className="nav-menu">
-        {navItems.map(item => {
-          const Icon = item.icon;
-          return (
-            <li key={item.id} className="nav-item">
-              <a 
-                className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(item.id)}
-              >
-                <Icon size={20} />
-                {item.label}
-              </a>
-            </li>
-          );
-        })}
-      </ul>
+        <ul className="nav-menu">
+          {navItems.map(item => {
+            const Icon = item.icon;
+            return (
+              <li key={item.id} className="nav-item">
+                <a 
+                  className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(item.id)}
+                >
+                  <Icon size={20} />
+                  {item.label}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+         <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', color: 'var(--danger)', border: 'none', background: 'transparent' }} onClick={onLogout}>
+            <LogOut size={18} /> Sair do Sistema
+         </button>
+      </div>
     </aside>
   );
 };
@@ -325,21 +326,21 @@ const Dashboard = ({ clients, invoices }) => {
   );
 };
 
-const InvoicesTab = ({ clients, invoices, setInvoices }) => {
+const InvoicesTab = ({ clients, invoices }) => {
   return (
     <div className="fade-in">
       <div className="top-header">
         <h1>Visão Geral de <span>Lançamentos</span></h1>
       </div>
       <div className="glass-panel">
-         <InvoicesTableComponent invoices={invoices} setInvoices={setInvoices} clients={clients} />
+         <InvoicesTableComponent invoices={invoices} clients={clients} />
       </div>
     </div>
   );
 };
 
 
-const ProductsTab = ({ products, setProducts }) => {
+const ProductsTab = ({ products }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -363,15 +364,15 @@ const ProductsTab = ({ products, setProducts }) => {
     setNewProduct({ ...newProduct, costs: newCosts });
   };
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
     const cleanCosts = newProduct.costs.filter(c => c.description.trim() !== '' && c.value !== '');
     
     if (editingId) {
-       setProducts(prev => prev.map(p => String(p.id) === String(editingId) ? { ...newProduct, costs: cleanCosts, id: p.id } : p));
+       await updateDoc(doc(db, 'products', String(editingId)), { ...newProduct, costs: cleanCosts });
     } else {
        if (newProduct.name) {
-         setProducts([...products, { ...newProduct, costs: cleanCosts, id: Math.random() }]);
+         await addDoc(collection(db, 'products'), { ...newProduct, costs: cleanCosts });
        }
     }
     setNewProduct({ name: '', defaultPrice: '', costs: [{ description: '', value: '' }] });
@@ -385,8 +386,8 @@ const ProductsTab = ({ products, setProducts }) => {
     setShowForm(true);
   }
 
-  const handleDelete = (id) => {
-    setProducts(prev => prev.filter(p => String(p.id) !== String(id)));
+  const handleDelete = async (id) => {
+    await deleteDoc(doc(db, 'products', String(id)));
   }
 
   return (
@@ -494,7 +495,7 @@ const ProductsTab = ({ products, setProducts }) => {
 
 // --- Aba Clientes Principal e View de Perfil ---
 
-const ClientDetailView = ({ client, setViewingClient, invoices, setInvoices, products }) => {
+const ClientDetailView = ({ client, setViewingClient, invoices, products }) => {
   const openWhatsapp = (phone) => {
     if (!phone) return;
     const cleanPhone = String(phone).replace(/\D/g, '');
@@ -521,7 +522,7 @@ const ClientDetailView = ({ client, setViewingClient, invoices, setInvoices, pro
                 <div style={{ display: 'flex', gap: '16px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                    <span>Frequência: <b>{client.frequency}</b></span>
                    <span>Início: <b>{formatDate(client.startDate)}</b></span>
-                   <span>Contrato Base: <b>{products.find(p=>p.id===client.productId)?.name || 'Sem produto'}</b></span>
+                   <span>Contrato Base: <b>{products.find(p=>String(p.id)===String(client.productId))?.name || 'Sem produto'}</b></span>
                 </div>
              </div>
          </div>
@@ -545,49 +546,56 @@ const ClientDetailView = ({ client, setViewingClient, invoices, setInvoices, pro
 
       <h3 style={{fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px'}}>Mensalidades e Lançamentos Gerados deste Cliente</h3>
       <div className="glass-panel">
-         <InvoicesTableComponent invoices={clientInvoices} setInvoices={setInvoices} clients={[client]} />
+         <InvoicesTableComponent invoices={clientInvoices} clients={[client]} />
       </div>
 
     </div>
   );
 }
 
-const ClientsTab = ({ clients, setClients, products, invoices, setInvoices }) => {
+const ClientsTab = ({ clients, products, invoices }) => {
   const [showForm, setShowForm] = useState(false);
   const [viewingClient, setViewingClient] = useState(null);
   const [formData, setFormData] = useState({
     name: '', phone: '', frequency: 'Semanal', value: '', productId: '', startDate: '', endDate: ''
   });
 
-  const handleAddClient = (e) => {
+  const handleAddClient = async (e) => {
     e.preventDefault();
-    const selectedProd = products.find(p => p.id === Number(formData.productId));
+    const selectedProd = products.find(p => String(p.id) === String(formData.productId));
     const prodCost = selectedProd ? getTotalCost(selectedProd.costs) : 0;
 
-    const newClient = {
+    const newClientData = {
       ...formData,
-      id: Math.random(),
-      productId: Number(formData.productId),
-      startDate: parseISO(formData.startDate),
-      endDate: parseISO(formData.endDate)
+      productId: String(formData.productId),
+      startDate: new Date(formData.startDate).toISOString(),
+      endDate: new Date(formData.endDate).toISOString()
     };
     
-    setClients(prev => [...prev, newClient]);
+    // Save to Firebase first to get real ID
+    const docRef = await addDoc(collection(db, 'clients'), newClientData);
+    
+    // Attach Real Doc ID for invoice association
+    const newClient = { ...newClientData, id: docRef.id };
     
     const newInvoices = generateInvoicesForClient(newClient, prodCost);
-    setInvoices(prev => [...prev, ...newInvoices]);
+    
+    // Save invoices to Firebase
+    for(let inv of newInvoices) {
+       await addDoc(collection(db, 'invoices'), inv);
+    }
 
     setFormData({ name: '', phone: '', frequency: 'Semanal', value: '', productId: '', startDate: '', endDate: '' });
     setShowForm(false);
     alert('Cliente cadastrado e cobranças geradas com sucesso!');
   };
 
-  const handleDeleteClient = (id) => {
-    setClients(prev => prev.filter(cl => String(cl.id) !== String(id)));
+  const handleDeleteClient = async (id) => {
+    await deleteDoc(doc(db, 'clients', String(id)));
   };
 
   if (viewingClient) {
-    return <ClientDetailView client={viewingClient} setViewingClient={setViewingClient} invoices={invoices} setInvoices={setInvoices} products={products} />
+    return <ClientDetailView client={viewingClient} setViewingClient={setViewingClient} invoices={invoices} products={products} />
   }
 
   return (
@@ -617,7 +625,7 @@ const ClientsTab = ({ clients, setClients, products, invoices, setInvoices }) =>
               <label className="form-label">Produto / Serviço Contratado</label>
               <select className="form-select" required
                 value={formData.productId} onChange={e => {
-                  const p = products.find(prod => prod.id === Number(e.target.value));
+                  const p = products.find(prod => String(prod.id) === String(e.target.value));
                   setFormData({...formData, productId: e.target.value, value: p ? p.defaultPrice : formData.value})
                 }}>
                 <option value="" disabled>Selecione um Produto Mapeado</option>
@@ -687,7 +695,7 @@ const ClientsTab = ({ clients, setClients, products, invoices, setInvoices }) =>
                   </td>
                   <td>
                     <div style={{display:'flex', flexDirection: 'column', gap: '2px'}}>
-                      <span style={{fontWeight: 500}}>{products.find(p=>p.id===c.productId)?.name || '-'}</span>
+                      <span style={{fontWeight: 500}}>{products.find(p=>String(p.id)===String(c.productId))?.name || '-'}</span>
                       <span className={`badge`} style={{display: 'inline-block', width: 'fit-content'}}>{c.frequency}</span>
                     </div>
                   </td>
@@ -711,43 +719,133 @@ const ClientsTab = ({ clients, setClients, products, invoices, setInvoices }) =>
 };
 
 
+const LoginScreen = ({ onLogin }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (
+      (email === 'comercial1.emphasis@gmail.com' && password === '12Rod34#') ||
+      (email === 'mesocialmedia16@gmail.com' && password === 'Casa920125#')
+    ) {
+      onLogin(true);
+    } else {
+      setError('Email ou Senha incorretos. Acesso negado.');
+    }
+  };
+
+  return (
+    <div style={{ height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-black)' }}>
+      <div className="glass-panel" style={{ padding: '40px', width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ width: '50px', height: '50px', borderRadius: '16px', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '24px', marginBottom: '16px'}}>E</div>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Emphasis ERP</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '32px', textAlign: 'center' }}>Insira suas credenciais para gerenciar a agência.</p>
+        
+        {error && <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '20px', width: '100%', fontSize: '0.9rem', textAlign: 'center' }}>{error}</div>}
+        
+        <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+          <div className="form-group" style={{marginBottom: '20px'}}>
+            <label className="form-label">Email de Acesso</label>
+            <input type="email" required className="form-input" placeholder="agencia@gmail.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: '32px' }}>
+            <label className="form-label">Senha</label>
+            <input type="password" required className="form-input" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
+          </div>
+          <button type="submit" className="btn" style={{ width: '100%', padding: '14px', justifyContent: 'center', fontSize: '1rem' }}>Entrar no Sistema</button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // --- App Root ---
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('emphasis_auth') === 'true';
+  });
+
+  const handleLogin = (status) => {
+    setIsAuthenticated(status);
+    if (status) {
+      localStorage.setItem('emphasis_auth', 'true');
+    } else {
+      localStorage.removeItem('emphasis_auth');
+    }
+  };
+
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem('emphasis_products');
-    return saved ? JSON.parse(saved) : initialProducts;
-  });
-  const [clients, setClients] = useState(() => {
-    const saved = localStorage.getItem('emphasis_clients');
-    return saved ? JSON.parse(saved) : initialClients;
-  });
-  const [invoices, setInvoices] = useState(() => {
-    const saved = localStorage.getItem('emphasis_invoices');
-    return saved ? JSON.parse(saved) : initialInvoices;
-  });
+  
+  // Real-time Cloud States
+  const [products, setProducts] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [invoices, setInvoices] = useState([]);
 
+  // Auto-migration local to Firebase
   useEffect(() => {
-    localStorage.setItem('emphasis_products', JSON.stringify(products));
-  }, [products]);
+    if (!isAuthenticated) return;
 
-  useEffect(() => {
-    localStorage.setItem('emphasis_clients', JSON.stringify(clients));
-  }, [clients]);
+    const performMigration = async () => {
+      const isMigrated = localStorage.getItem('firebase_migrated') === 'true';
+      if (isMigrated) return;
 
+      const lsProducts = JSON.parse(localStorage.getItem('emphasis_products') || '[]');
+      const lsClients = JSON.parse(localStorage.getItem('emphasis_clients') || '[]');
+      const lsInvoices = JSON.parse(localStorage.getItem('emphasis_invoices') || '[]');
+
+      if (lsProducts.length === 0 && lsClients.length === 0) return;
+
+      console.log('Migrating LocalStorage to Firebase...');
+      
+      for (let p of lsProducts) await setDoc(doc(db, 'products', String(p.id)), p);
+      for (let c of lsClients) await setDoc(doc(db, 'clients', String(c.id)), c);
+      for (let inv of lsInvoices) await setDoc(doc(db, 'invoices', String(inv.id)), inv);
+
+      localStorage.setItem('firebase_migrated', 'true');
+      console.log('Migration Complete');
+    };
+
+    performMigration();
+  }, [isAuthenticated]);
+
+  // Real-time Listeners
   useEffect(() => {
-    localStorage.setItem('emphasis_invoices', JSON.stringify(invoices));
-  }, [invoices]);
+    if (!isAuthenticated) return;
+
+    const unsubProducts = onSnapshot(collection(db, 'products'), snapshot => {
+      setProducts(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+    
+    const unsubClients = onSnapshot(collection(db, 'clients'), snapshot => {
+      setClients(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+    
+    const unsubInvoices = onSnapshot(collection(db, 'invoices'), snapshot => {
+      setInvoices(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+
+    return () => {
+      unsubProducts();
+      unsubClients();
+      unsubInvoices();
+    };
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   return (
     <div className="app-container">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={() => handleLogin(false)} />
       <main className="main-content">
         {activeTab === 'dashboard' && <Dashboard clients={clients} invoices={invoices} />}
-        {activeTab === 'invoices' && <InvoicesTab clients={clients} invoices={invoices} setInvoices={setInvoices} />}
-        {activeTab === 'clients' && <ClientsTab clients={clients} setClients={setClients} products={products} invoices={invoices} setInvoices={setInvoices} />}
-        {activeTab === 'products' && <ProductsTab products={products} setProducts={setProducts} />}
+        {activeTab === 'invoices' && <InvoicesTab clients={clients} invoices={invoices} />}
+        {activeTab === 'clients' && <ClientsTab clients={clients} products={products} invoices={invoices} />}
+        {activeTab === 'products' && <ProductsTab products={products} />}
       </main>
     </div>
   );
