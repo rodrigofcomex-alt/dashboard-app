@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initialClients, initialInvoices, initialProducts } from './data';
 import { format, isPast, isToday, addDays, addMonths, parseISO, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -715,9 +715,30 @@ const ClientsTab = ({ clients, setClients, products, invoices, setInvoices }) =>
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [products, setProducts] = useState(initialProducts);
-  const [clients, setClients] = useState(initialClients);
-  const [invoices, setInvoices] = useState(initialInvoices);
+  const [products, setProducts] = useState(() => {
+    const saved = localStorage.getItem('emphasis_products');
+    return saved ? JSON.parse(saved) : initialProducts;
+  });
+  const [clients, setClients] = useState(() => {
+    const saved = localStorage.getItem('emphasis_clients');
+    return saved ? JSON.parse(saved) : initialClients;
+  });
+  const [invoices, setInvoices] = useState(() => {
+    const saved = localStorage.getItem('emphasis_invoices');
+    return saved ? JSON.parse(saved) : initialInvoices;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('emphasis_products', JSON.stringify(products));
+  }, [products]);
+
+  useEffect(() => {
+    localStorage.setItem('emphasis_clients', JSON.stringify(clients));
+  }, [clients]);
+
+  useEffect(() => {
+    localStorage.setItem('emphasis_invoices', JSON.stringify(invoices));
+  }, [invoices]);
 
   return (
     <div className="app-container">
